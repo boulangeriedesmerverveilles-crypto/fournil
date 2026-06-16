@@ -582,12 +582,15 @@ const SYNC = {
 const CLE_ATTENTE = "bdm_fournil_attente";
 const VALIDATEUR = "Damien";
 const MOMENT = "Jour"; // un seul relevé quotidien
-// Frigos 1 à 9 : froid positif 0 à +4 °C. N°10 : chambre froide négative -30 à -18 °C.
+// Frigos 1 à 7 : froid positif 0/+4 °C. N°8 et 9 : congélateurs négatifs. N°10 : chambre froide négative. (-30/-18 °C)
+const NEG = { min: -30, max: -18, defaut: -19 };
 const FRIGOS = [
-  ...Array.from({ length: 9 }, (_, i) => ({
+  ...Array.from({ length: 7 }, (_, i) => ({
     id: "f" + (i + 1), num: i + 1, nom: "Frigo " + (i + 1), min: 0, max: 4, defaut: 3,
   })),
-  { id: "f10", num: 10, nom: "Chambre froide négative", min: -30, max: -18, defaut: -19 },
+  { id: "f8",  num: 8,  nom: "Congel 1", ...NEG },
+  { id: "f9",  num: 9,  nom: "Congel 2", ...NEG },
+  { id: "f10", num: 10, nom: "Chambre froide négative", ...NEG },
 ];
 const CLE = "bdm_fournil_v1";
 const MOIS_FR = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
@@ -854,9 +857,9 @@ function genererPdfMois() {
   doc.text("Registre HACCP — Relevé des températures — " + nomMois(mois), 14, 21);
   doc.setFontSize(8);
   doc.setTextColor(120, 120, 120);
-  doc.text("Frigos 1 à 9 : froid positif 0 à +4 °C.   |   N°10 — Chambre froide négative : -30 à -18 °C.", 14, 27);
+  doc.text("Frigos 1 à 7 : froid positif 0 à +4 °C.   |   Congel 1, Congel 2 et Chambre froide négative : -30 à -18 °C.", 14, 27);
 
-  const head = [["Date", ...FRIGOS.map(f => "F" + f.num), "Visa (" + VALIDATEUR + ")"]];
+  const head = [["Date", ...FRIGOS.map(f => f.num <= 7 ? "F" + f.num : f.nom), "Visa (" + VALIDATEUR + ")"]];
   const body = jours.map(date => {
     const v = donnees[date]._v || {};
     return [dateFr(date).replace(" " + mois.slice(0,4), ""),
