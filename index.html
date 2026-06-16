@@ -467,26 +467,26 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   .frigo {
     background: white; border-radius: 14px; padding: 10px 12px; margin-bottom: 8px;
     box-shadow: 0 2px 5px rgba(0,0,0,.06);
-    display: flex; align-items: center; gap: 10px;
   }
   .frigo.eteint { opacity: .55; }
+  .frigo .entete-f { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
   .frigo .num {
     flex-shrink: 0; width: 38px; height: 38px; border-radius: 10px;
     background: var(--acc); color: white; font-weight: bold; font-size: 1.05rem;
     display: flex; align-items: center; justify-content: center;
   }
   .frigo .infos { flex: 1; min-width: 0; }
-  .frigo h2 { font-size: .95rem; color: var(--acc-fonce); }
-  .frigo .plage { font-size: .72rem; color: #999; }
+  .frigo h2 { font-size: .98rem; color: var(--acc-fonce); }
+  .frigo .plage { font-size: .74rem; color: #999; }
   .frigo.eteint .plage { text-decoration: line-through; }
-  .stepper { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+  .stepper { display: flex; align-items: center; justify-content: center; gap: 8px; }
   .stepper button {
     width: 40px; height: 40px; font-size: 1.35rem; border: none; border-radius: 50%;
     background: var(--creme); color: var(--acc-fonce); font-weight: bold;
   }
   .stepper button:active { background: var(--acc); color: white; }
   .stepper input {
-    width: 68px; height: 42px; text-align: center; font-size: 1.2rem; font-weight: bold;
+    width: 92px; height: 44px; text-align: center; font-size: 1.25rem; font-weight: bold;
     border: 2px solid #ddd; border-radius: 10px; color: var(--brun);
   }
   .stepper input.ok { border-color: var(--vert); background: #f3f8e8; }
@@ -582,10 +582,13 @@ const SYNC = {
 const CLE_ATTENTE = "bdm_fournil_attente";
 const VALIDATEUR = "Damien";
 const MOMENT = "Jour"; // un seul relevé quotidien
-// 10 frigos numérotés, tous en froid positif 0 à +4 °C
-const FRIGOS = Array.from({ length: 10 }, (_, i) => ({
-  id: "f" + (i + 1), num: i + 1, nom: "Frigo " + (i + 1), min: 0, max: 4, defaut: 3,
-}));
+// Frigos 1 à 9 : froid positif 0 à +4 °C. N°10 : chambre froide négative -30 à -18 °C.
+const FRIGOS = [
+  ...Array.from({ length: 9 }, (_, i) => ({
+    id: "f" + (i + 1), num: i + 1, nom: "Frigo " + (i + 1), min: 0, max: 4, defaut: 3,
+  })),
+  { id: "f10", num: 10, nom: "Chambre froide négative", min: -30, max: -18, defaut: -19 },
+];
 const CLE = "bdm_fournil_v1";
 const MOIS_FR = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
 
@@ -614,10 +617,13 @@ function rendreSaisie() {
     const v = !off && jour[f.id] && jour[f.id][MOMENT] !== undefined ? jour[f.id][MOMENT] : "";
     return `
     <div class="frigo ${off ? "eteint" : ""}" id="frigo_${f.id}">
-      <div class="num">${f.num}</div>
-      <div class="infos">
-        <h2>${f.nom}</h2>
-        <div class="plage">${fmtTemp(f.min)} à ${fmtTemp(f.max)} °C</div>
+      <div class="entete-f">
+        <div class="num">${f.num}</div>
+        <div class="infos">
+          <h2>${f.nom}</h2>
+          <div class="plage">${fmtTemp(f.min)} à ${fmtTemp(f.max)} °C</div>
+        </div>
+        <button class="btn-off ${off ? "actif" : ""}" onclick="basculerOff('${f.id}')">${off ? "Éteint" : "Off"}</button>
       </div>
       <div class="stepper">
         <button onclick="bouger('${f.id}',-0.5)" ${off ? "disabled" : ""}>−</button>
@@ -626,7 +632,6 @@ function rendreSaisie() {
         <button onclick="bouger('${f.id}',0.5)" ${off ? "disabled" : ""}>+</button>
         <span class="deg">°C</span>
       </div>
-      <button class="btn-off ${off ? "actif" : ""}" onclick="basculerOff('${f.id}')">${off ? "Éteint" : "Off"}</button>
     </div>`;
   }).join("");
   FRIGOS.forEach(f => majClasse($("t_" + f.id), f.id));
@@ -672,7 +677,7 @@ function majBandeau() {
   const pb = [];
   FRIGOS.forEach(f => {
     const inp = $("t_" + f.id);
-    if (inp && !inp.disabled && inp.value !== "" && !conforme(f, parseFloat(inp.value))) pb.push("Frigo " + f.num);
+    if (inp && !inp.disabled && inp.value !== "" && !conforme(f, parseFloat(inp.value))) pb.push(f.nom);
   });
   const b = $("bandeauAlerte");
   if (pb.length) {
@@ -722,7 +727,7 @@ function valider() {
   majStatut();
   majBoutonValider();
   toast("✓ Relevé validé par " + VALIDATEUR +
-    (manquants.length ? " — attention, sans : " + manquants.map(f => "Frigo " + f.num).join(", ") : ""));
+    (manquants.length ? " — attention, sans : " + manquants.map(f => f.nom).join(", ") : ""));
 }
 
 function changerJour(delta) {
@@ -849,7 +854,7 @@ function genererPdfMois() {
   doc.text("Registre HACCP — Relevé des températures — " + nomMois(mois), 14, 21);
   doc.setFontSize(8);
   doc.setTextColor(120, 120, 120);
-  doc.text("10 frigos, froid positif, plage autorisée 0 à +4 °C pour chacun.", 14, 27);
+  doc.text("Frigos 1 à 9 : froid positif 0 à +4 °C.   |   N°10 — Chambre froide négative : -30 à -18 °C.", 14, 27);
 
   const head = [["Date", ...FRIGOS.map(f => "F" + f.num), "Visa (" + VALIDATEUR + ")"]];
   const body = jours.map(date => {
