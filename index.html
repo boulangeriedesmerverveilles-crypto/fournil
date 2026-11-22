@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#9a5a3b" id="metaTheme">
 <title>Boulangerie des Merveilles — Livraisons et températures</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🥖</text></svg>">
-<link rel="stylesheet" href="fournil.css?v=7">
+<link rel="stylesheet" href="fournil.css?v=8">
 <link rel="stylesheet" href="livraisons.css?v=7">
 <style>
   /* Coquille commune : bandeau collant + choix du module.
@@ -69,6 +69,10 @@
     <div class="statut-valide" id="statutValide"></div>
     <div class="bandeau-alerte" id="bandeauAlerte"></div>
     <div id="listeFrigos"></div>
+    <div class="zone-action" id="zoneAction" hidden>
+      <label for="actionCorrective">Action corrective <span>— ce qui a été fait pour la température hors plage</span></label>
+      <textarea id="actionCorrective" rows="3" maxlength="300" placeholder="Ex. : porte mal fermée, refermée. Recontrôle à 9 h : +3 °C. Produits vérifiés."></textarea>
+    </div>
   </section>
 
   <section id="vueRecap">
@@ -140,7 +144,7 @@
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="vendor/jspdf.plugin.autotable.min.js"></script>
 <script src="calendrier.js?v=7"></script>
-<script src="fournil.js?v=7"></script>
+<script src="fournil.js?v=8"></script>
 <script src="livraisons.js?v=7"></script>
 <script>
   /* Passage d'un module à l'autre. Le choix est mémorisé sur l'appareil. */

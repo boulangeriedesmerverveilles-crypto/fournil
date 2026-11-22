@@ -47,6 +47,11 @@ function assainir(brut) {
       jour._v = {};
       jour._v[MOMENT] = { ok: true }; // l'heure et le nom des anciens relevés ne sont plus repris
     }
+    const a = src._a && src._a[MOMENT];
+    if (typeof a === "string" && a.trim()) {
+      jour._a = {};
+      jour._a[MOMENT] = a.trim().slice(0, 300); // action corrective : texte court, toujours affiché comme du texte brut
+    }
     if (Object.keys(jour).length) propre[date] = jour;
   });
   return propre;
@@ -69,6 +74,13 @@ function dateFr(iso) {
 function fmtTemp(v) { return (v > 0 ? "+" : "") + String(v).replace(".", ","); }
 function conforme(f, v) { return v >= f.min && v <= f.max; }
 function jourCourant() { return donnees[$("dateJour").value] || {}; }
+/** Nombre de températures hors plage enregistrées pour un jour. */
+function horsPlage(jour) {
+  return FRIGOS.filter(f => jour[f.id] && !jour[f.id].off && jour[f.id][MOMENT] !== undefined && !conforme(f, jour[f.id][MOMENT])).length;
+}
+function actionDu(jour) { return (jour && jour._a && jour._a[MOMENT]) || ""; }
+// Texte tapé mais pas encore validé : conservé si l'écran se rafraîchit entre-temps.
+let brouillonAction = { date: "", texte: "" };
 
 /* ---------- SAISIE ---------- */
 /** Vrai si le jour affiché est fermé ET ne contient encore aucune saisie. */
@@ -83,6 +95,7 @@ function rendreSaisie() {
   $("bandeauFerme").hidden = !fermeture.html;
   if (fermeture.ferme) {
     $("listeFrigos").innerHTML = "";
+    $("zoneAction").hidden = true;
     $("bandeauAlerte").style.display = "none";
     majStatut();
     majBoutonValider();
@@ -113,6 +126,8 @@ function rendreSaisie() {
       </div>
     </div>`;
   }).join("");
+  const dateVue = $("dateJour").value;
+  $("actionCorrective").value = brouillonAction.date === dateVue ? brouillonAction.texte : actionDu(jour);
   FRIGOS.forEach(f => majClasse($("t_" + f.id), f.id));
   majStatut();
   majBoutonValider();
@@ -163,8 +178,9 @@ function majBandeau() {
   const b = $("bandeauAlerte");
   if (pb.length) {
     b.style.display = "block";
-    b.textContent = "⚠️ Température hors plage : " + pb.join(", ") + ". Vérifiez l'équipement et notez l'action corrective.";
+    b.textContent = "⚠️ Température hors plage : " + pb.join(", ") + ". Vérifiez l'équipement et notez l'action corrective ci-dessous.";
   } else b.style.display = "none";
+  $("zoneAction").hidden = !(pb.length || $("actionCorrective").value.trim());
 }
 
 function basculerOff(fid) {
@@ -202,12 +218,19 @@ function valider() {
   const manquants = FRIGOS.filter(f => !(jour[f.id] && (jour[f.id].off || jour[f.id][MOMENT] !== undefined)));
   jour._v = jour._v || {};
   jour._v[MOMENT] = { ok: true };
+  const action = $("actionCorrective").value.trim().slice(0, 300);
+  const envoi = Object.assign({}, jour);
+  if (action) { jour._a = {}; jour._a[MOMENT] = action; envoi._a = jour._a; }
+  else { delete jour._a; envoi._a = {}; envoi._a[MOMENT] = ""; } // le serveur ne sait qu'ajouter : une note vide remplace l'ancienne
+  brouillonAction = { date: "", texte: "" };
   localStorage.setItem(CLE, JSON.stringify(donnees));
-  pushServeur({ [date]: donnees[date] });
+  pushServeur({ [date]: envoi });
   majStatut();
   majBoutonValider();
+  majBandeau();
   toast("✓ Relevé validé" +
-    (manquants.length ? " — attention, sans : " + manquants.map(f => f.nom).join(", ") : ""));
+    (manquants.length ? " — attention, sans : " + manquants.map(f => f.nom).join(", ") : "") +
+    (horsPlage(jour) && !action ? " — pensez à noter l'action corrective" : ""));
 }
 
 function changerJour(delta) {
@@ -290,8 +313,12 @@ function rendreControle(mois) {
       if (!r || r.off || r[MOMENT] === undefined) return;
       if (!conforme(f, r[MOMENT])) alertes++;
     });
+    const action = actionDu(jour);
+    let detail = "";
+    if (action) detail = `<div class="action-note">Action : ${echapper(action)}</div>`;
+    else if (alertes) detail = `<div class="action-manque">Action corrective non notée</div>`;
     let cell;
-    if (v[MOMENT]) cell = `<td class="ok">✓ fait</td>`;
+    if (v[MOMENT]) cell = `<td class="ok">✓ fait${detail}</td>`;
     else if (Calendrier.etat(date).ferme) cell = `<td class="futur">fermé</td>`;
     else if (futur) cell = `<td class="futur">·</td>`;
     else { manques++; cell = `<td class="manque">✗ manquant</td>`; }
@@ -320,6 +347,12 @@ function nomMois(mois) {
   const [a, m] = mois.split("-");
   const n = MOIS_FR[parseInt(m)-1];
   return n.charAt(0).toUpperCase() + n.slice(1) + " " + a;
+}
+
+/** Le PDF ne sait dessiner que les caractères latins : apostrophes et guillemets courbes sont redressés, le reste (émojis…) retiré. */
+function textePdf(s) {
+  return String(s).replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"')
+    .replace(/[^\x20-\x7E\u00A0-\u00FF\u0152\u0153\u2013\u2014\u2026\u20AC]/g, " ").replace(/\s+/g, " ").replace(/ ([,.])/g, "$1").trim();
 }
 
 function genererPdfMois() {
@@ -374,6 +407,27 @@ function genererPdfMois() {
   });
 
   let y = doc.lastAutoTable.finalY + 8;
+  const place = h => { if (y + h > 198) { doc.addPage(); y = 16; } };
+  const concernes = jours.filter(date => actionDu(donnees[date]) || horsPlage(donnees[date]));
+  if (concernes.length) {
+    place(12);
+    doc.setFontSize(10); doc.setFont("helvetica", "bold"); doc.setTextColor(93, 70, 50);
+    doc.text("Actions correctives", 14, y);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+    y += 5;
+    concernes.forEach(date => {
+      const action = actionDu(donnees[date]);
+      const texte = dateFr(date).replace(" " + mois.slice(0,4), "") + " : " +
+        (action ? textePdf(action) : "température hors plage — aucune action corrective notée.");
+      const lignes = doc.splitTextToSize(texte, 268);
+      place(lignes.length * 4 + 2);
+      doc.setTextColor(...(action ? [93, 70, 50] : [192, 57, 43]));
+      doc.text(lignes, 14, y);
+      y += lignes.length * 4 + 1.5;
+    });
+    y += 4;
+  }
+  place(18);
   const totalAlertes = FRIGOS.reduce((t, f) => t + stats[f.id].alertes, 0);
   doc.setFontSize(9);
   doc.setTextColor(93, 70, 50);
@@ -458,6 +512,7 @@ $("dateJour").addEventListener("change", rendreSaisie);
 $("jourPrec").addEventListener("click", () => changerJour(-1));
 $("jourSuiv").addEventListener("click", () => changerJour(1));
 $("btnValider").addEventListener("click", valider);
+$("actionCorrective").addEventListener("input", e => { brouillonAction = { date: $("dateJour").value, texte: e.target.value }; });
 $("btnRecap").addEventListener("click", basculer);
 $("selMois").addEventListener("change", rendreRecap);
 $("btnPdfMois").addEventListener("click", genererPdfMois);

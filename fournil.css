@@ -123,3 +123,15 @@
     max-width: 90%; text-align: center;
   }
   .toast.visible { opacity: 1; }
+
+  /* Action corrective (température hors plage) */
+  .zone-action { background: white; border: 2px solid var(--rouge); border-radius: 14px; padding: 12px; margin: 4px 0 8px; }
+  .zone-action[hidden] { display: none; }
+  .zone-action label { display: block; font-weight: bold; color: var(--rouge); font-size: .95rem; margin-bottom: 6px; }
+  .zone-action label span { font-weight: normal; color: #999; font-size: .8rem; }
+  .zone-action textarea {
+    width: 100%; font: inherit; font-size: 1rem; padding: 10px; resize: vertical;
+    border: 2px solid #ddd; border-radius: 10px; color: var(--brun); background: white;
+  }
+  .controle .action-note { font-weight: normal; font-size: .82rem; color: var(--brun); margin-top: 2px; }
+  .controle .action-manque { font-weight: normal; font-size: .82rem; color: var(--rouge); margin-top: 2px; }
