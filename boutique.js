@@ -25,7 +25,9 @@ const Boutique = (() => {
     { id: "vitrine_salee", num: 1, nom: "Vitrine salée", court: "Vitrine salée", min: 0, max: 4, defaut: 3 },
     { id: "vitrine_patis", num: 2, nom: "Vitrine pâtissière", court: "Vitrine pâtissière", min: 0, max: 4, defaut: 3 },
     { id: "frigo_reserve", num: 3, nom: "Frigo de réserve", court: "Frigo de réserve", min: 0, max: 4, defaut: 3 },
-    { id: "vitrine_neg", num: 4, nom: "Vitrine froid négatif (Hibernat)", court: "Vitrine négatif", min: -30, max: -18, defaut: -19 },
+    { id: "vitrine_neg", num: 4, nom: "Vitrine froid négatif 1 (Hibernat)", court: "Vitrine négatif 1", min: -30, max: -18, defaut: -19 },
+    // Ajoutée le 22/11/2026 : les jours antérieurs n'ont pas de relevé pour elle (affichés « — »).
+    { id: "vitrine_neg2", num: 5, nom: "Vitrine froid négatif 2 (Hibernat)", court: "Vitrine négatif 2", min: -30, max: -18, defaut: -19 },
   ];
 
   /* ---------- Filtre : on ne garde que la forme attendue ---------- */
@@ -406,7 +408,7 @@ const Boutique = (() => {
     doc.setFontSize(11); doc.setTextColor(...BLEU);
     doc.text("Registre HACCP — Relevé des températures — " + nomMois(mois), 14, 21);
     doc.setFontSize(8); doc.setTextColor(120, 120, 120);
-    doc.text("Vitrine salée, vitrine pâtissière et frigo de réserve : 0 à +4 °C.   |   Vitrine froid négatif (Hibernat) : -30 à -18 °C.", 14, 27);
+    doc.text("Vitrine salée, vitrine pâtissière et frigo de réserve : 0 à +4 °C.   |   Vitrines froid négatif 1 et 2 (Hibernat) : -30 à -18 °C.", 14, 27);
 
     const head = [
       [{ content: "Date", rowSpan: 2 }, ...EQUIP.map((e) => ({ content: e.court, colSpan: 2 })), { content: "Relevé validé", colSpan: 2 }],
