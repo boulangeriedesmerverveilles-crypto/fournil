@@ -14,6 +14,15 @@ const FRIGOS = [
   { id: "f9",  num: 9,  nom: "Congel 2", ...NEG },
   { id: "f10", num: 10, nom: "Chambre froide négative", ...NEG },
 ];
+// Actions correctives à cocher quand une température est hors plage.
+// Seul le code est enregistré : on peut reformuler un libellé sans perdre l'historique.
+const ACTIONS = [
+  { code: "rev",   texte: "Revérifier le frigo 1 heure plus tard" },
+  { code: "resp",  texte: "Informer le responsable" },
+  { code: "porte", texte: "Porte bien refermée" },
+  { code: "depl",  texte: "Produits déplacés dans un autre frigo" },
+  { code: "jet",   texte: "Produits jetés" },
+];
 const CLE = "bdm_fournil_v1";
 const MOIS_FR = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
 
@@ -47,10 +56,17 @@ function assainir(brut) {
       jour._v = {};
       jour._v[MOMENT] = { ok: true }; // l'heure et le nom des anciens relevés ne sont plus repris
     }
-    const a = src._a && src._a[MOMENT];
-    if (typeof a === "string" && a.trim()) {
-      jour._a = {};
-      jour._a[MOMENT] = a.trim().slice(0, 300); // action corrective : texte court, toujours affiché comme du texte brut
+    const a = src._a;
+    if (a && typeof a === "object") {
+      const net = {};
+      // précisions : texte court, toujours affiché comme du texte brut
+      if (typeof a[MOMENT] === "string" && a[MOMENT].trim()) net[MOMENT] = a[MOMENT].trim().slice(0, 300);
+      // cases cochées : seuls les codes connus sont gardés
+      if (typeof a.c === "string") {
+        const codes = a.c.split(",").filter(c => ACTIONS.some(x => x.code === c));
+        if (codes.length) net.c = codes.join(",");
+      }
+      if (Object.keys(net).length) jour._a = net;
     }
     if (Object.keys(jour).length) propre[date] = jour;
   });
@@ -78,9 +94,17 @@ function jourCourant() { return donnees[$("dateJour").value] || {}; }
 function horsPlage(jour) {
   return FRIGOS.filter(f => jour[f.id] && !jour[f.id].off && jour[f.id][MOMENT] !== undefined && !conforme(f, jour[f.id][MOMENT])).length;
 }
-function actionDu(jour) { return (jour && jour._a && jour._a[MOMENT]) || ""; }
-// Texte tapé mais pas encore validé : conservé si l'écran se rafraîchit entre-temps.
-let brouillonAction = { date: "", texte: "" };
+function casesDu(jour) { return jour && jour._a && jour._a.c ? jour._a.c.split(",") : []; }
+function precisionsDu(jour) { return (jour && jour._a && jour._a[MOMENT]) || ""; }
+/** Action corrective complète d'un jour, en une phrase : cases cochées puis précisions. */
+function actionDu(jour) {
+  const morceaux = ACTIONS.filter(a => casesDu(jour).includes(a.code)).map(a => a.texte);
+  if (precisionsDu(jour)) morceaux.push(precisionsDu(jour));
+  return morceaux.join(" · ");
+}
+function casesCochees() { return [...document.querySelectorAll("#casesAction input:checked")].map(i => i.value); }
+// Ce qui est coché ou tapé mais pas encore validé : conservé si l'écran se rafraîchit entre-temps.
+let brouillonAction = { date: "", texte: "", cases: [] };
 
 /* ---------- SAISIE ---------- */
 /** Vrai si le jour affiché est fermé ET ne contient encore aucune saisie. */
@@ -127,7 +151,11 @@ function rendreSaisie() {
     </div>`;
   }).join("");
   const dateVue = $("dateJour").value;
-  $("actionCorrective").value = brouillonAction.date === dateVue ? brouillonAction.texte : actionDu(jour);
+  const brouillon = brouillonAction.date === dateVue;
+  const cochees = brouillon ? brouillonAction.cases : casesDu(jour);
+  $("casesAction").innerHTML = ACTIONS.map(a =>
+    `<label><input type="checkbox" value="${a.code}"${cochees.includes(a.code) ? " checked" : ""}> ${a.texte}</label>`).join("");
+  $("actionCorrective").value = brouillon ? brouillonAction.texte : precisionsDu(jour);
   FRIGOS.forEach(f => majClasse($("t_" + f.id), f.id));
   majStatut();
   majBoutonValider();
@@ -180,7 +208,7 @@ function majBandeau() {
     b.style.display = "block";
     b.textContent = "⚠️ Température hors plage : " + pb.join(", ") + ". Vérifiez l'équipement et notez l'action corrective ci-dessous.";
   } else b.style.display = "none";
-  $("zoneAction").hidden = !(pb.length || $("actionCorrective").value.trim());
+  $("zoneAction").hidden = !(pb.length || $("actionCorrective").value.trim() || casesCochees().length);
 }
 
 function basculerOff(fid) {
@@ -218,11 +246,20 @@ function valider() {
   const manquants = FRIGOS.filter(f => !(jour[f.id] && (jour[f.id].off || jour[f.id][MOMENT] !== undefined)));
   jour._v = jour._v || {};
   jour._v[MOMENT] = { ok: true };
-  const action = $("actionCorrective").value.trim().slice(0, 300);
+  const precisions = $("actionCorrective").value.trim().slice(0, 300);
+  const codes = casesCochees().join(",");
+  delete jour._a;
+  if (precisions || codes) {
+    jour._a = {};
+    if (precisions) jour._a[MOMENT] = precisions;
+    if (codes) jour._a.c = codes;
+  }
+  // Le serveur ne sait qu'ajouter : on envoie toujours les deux champs, même vides, pour remplacer les anciens.
   const envoi = Object.assign({}, jour);
-  if (action) { jour._a = {}; jour._a[MOMENT] = action; envoi._a = jour._a; }
-  else { delete jour._a; envoi._a = {}; envoi._a[MOMENT] = ""; } // le serveur ne sait qu'ajouter : une note vide remplace l'ancienne
-  brouillonAction = { date: "", texte: "" };
+  envoi._a = { c: codes };
+  envoi._a[MOMENT] = precisions;
+  const action = actionDu(jour);
+  brouillonAction = { date: "", texte: "", cases: [] };
   localStorage.setItem(CLE, JSON.stringify(donnees));
   pushServeur({ [date]: envoi });
   majStatut();
@@ -512,7 +549,11 @@ $("dateJour").addEventListener("change", rendreSaisie);
 $("jourPrec").addEventListener("click", () => changerJour(-1));
 $("jourSuiv").addEventListener("click", () => changerJour(1));
 $("btnValider").addEventListener("click", valider);
-$("actionCorrective").addEventListener("input", e => { brouillonAction = { date: $("dateJour").value, texte: e.target.value }; });
+const noterBrouillon = () => {
+  brouillonAction = { date: $("dateJour").value, texte: $("actionCorrective").value, cases: casesCochees() };
+};
+$("actionCorrective").addEventListener("input", noterBrouillon);
+$("casesAction").addEventListener("change", noterBrouillon);
 $("btnRecap").addEventListener("click", basculer);
 $("selMois").addEventListener("change", rendreRecap);
 $("btnPdfMois").addEventListener("click", genererPdfMois);

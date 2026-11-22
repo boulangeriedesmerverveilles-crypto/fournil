@@ -127,8 +127,15 @@
   /* Action corrective (température hors plage) */
   .zone-action { background: white; border: 2px solid var(--rouge); border-radius: 14px; padding: 12px; margin: 4px 0 8px; }
   .zone-action[hidden] { display: none; }
-  .zone-action label { display: block; font-weight: bold; color: var(--rouge); font-size: .95rem; margin-bottom: 6px; }
-  .zone-action label span { font-weight: normal; color: #999; font-size: .8rem; }
+  .zone-action .titre-action { font-weight: bold; color: var(--rouge); font-size: .95rem; margin-bottom: 6px; }
+  .zone-action .titre-action span { font-weight: normal; color: #999; font-size: .8rem; }
+  .cases-action label {
+    display: flex; align-items: center; gap: 10px; padding: 9px 2px; font-size: 1rem;
+    color: var(--brun); border-top: 1px solid #eee;
+  }
+  .cases-action label:first-child { border-top: none; }
+  .cases-action input { width: 24px; height: 24px; flex-shrink: 0; accent-color: var(--acc); }
+  .zone-action .sous-titre-action { display: block; margin: 8px 0 4px; font-size: .8rem; font-weight: bold; color: #999; }
   .zone-action textarea {
     width: 100%; font: inherit; font-size: 1rem; padding: 10px; resize: vertical;
     border: 2px solid #ddd; border-radius: 10px; color: var(--brun); background: white;
