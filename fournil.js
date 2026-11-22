@@ -18,7 +18,39 @@ const FRIGOS = [
 const CLE = "bdm_fournil_v1";
 const MOIS_FR = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
 
-let donnees = JSON.parse(localStorage.getItem(CLE) || "{}");
+/* ---------- Sécurité : on ne fait confiance ni au serveur ni au stockage local ---------- */
+function echapper(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+/** Ne garde que la forme attendue : dates, températures chiffrées, arrêts, visa (heure HH:MM + nom court).
+    Tout le reste est écarté, pour qu'une donnée trafiquée ne puisse jamais s'exécuter dans la page. */
+function assainir(brut) {
+  const propre = {};
+  if (!brut || typeof brut !== "object" || Array.isArray(brut)) return propre;
+  Object.keys(brut).forEach(date => {
+    const src = brut[date];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !src || typeof src !== "object") return;
+    const jour = {};
+    FRIGOS.forEach(f => {
+      const r = src[f.id];
+      if (!r || typeof r !== "object") return;
+      const net = {};
+      if (r.off === true) net.off = true;
+      if (typeof r[MOMENT] === "number" && isFinite(r[MOMENT])) net[MOMENT] = r[MOMENT];
+      if (Object.keys(net).length) jour[f.id] = net;
+    });
+    const v = src._v && src._v[MOMENT];
+    if (v && typeof v === "object") {
+      jour._v = {};
+      jour._v[MOMENT] = { h: /^\d{2}:\d{2}$/.test(v.h) ? v.h : "--:--", par: String(v.par == null ? "" : v.par).slice(0, 40) };
+    }
+    if (Object.keys(jour).length) propre[date] = jour;
+  });
+  return propre;
+}
+
+let donnees;
+try { donnees = assainir(JSON.parse(localStorage.getItem(CLE) || "{}")); } catch (e) { donnees = {}; }
 // { "2026-06-13": { f1:{Jour:3}, f5:{off:true}, _v:{ Jour:{h:"06:30",par:"Damien"} } } }
 let modeRecap = false;
 const $ = id => document.getElementById(id);
@@ -240,7 +272,7 @@ function rendreControle(mois) {
     });
     let cell;
     if (futur) cell = `<td class="futur">·</td>`;
-    else if (v[MOMENT]) cell = `<td class="ok">✓ ${v[MOMENT].h} ${v[MOMENT].par}</td>`;
+    else if (v[MOMENT]) cell = `<td class="ok">✓ ${echapper(v[MOMENT].h)} ${echapper(v[MOMENT].par)}</td>`;
     else { manques++; cell = `<td class="manque">✗ manquant</td>`; }
     lignes.push(`<tr class="${alertes ? "alerte-jour" : ""}">
       <td>${String(j).padStart(2,"0")}/${String(m).padStart(2,"0")}${alertes ? " ⚠️" : ""}</td>${cell}
@@ -340,6 +372,7 @@ function majSync(ok) {
 
 function appliquerServeur(srv) {
   if (!srv || Array.isArray(srv) || typeof srv !== "object") srv = {};
+  srv = assainir(srv);
   let aPousser = false;
   Object.keys(donnees).forEach(d => { if (!srv[d]) { srv[d] = donnees[d]; aPousser = true; } });
   donnees = srv;
