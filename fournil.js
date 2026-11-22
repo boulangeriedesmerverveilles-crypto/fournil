@@ -3,7 +3,6 @@ const SYNC = {
   jeton: "6dff0ba76a6012c1b408b8cd474da23d41d538f5ec17b636",
 };
 const CLE_ATTENTE = "bdm_fournil_attente";
-const VALIDATEUR = "Maël";
 const MOMENT = "Jour"; // un seul relevé quotidien
 // Frigos 1 à 7 : froid positif 0/+4 °C. N°8 et 9 : congélateurs négatifs. N°10 : chambre froide négative. (-30/-18 °C)
 const NEG = { min: -30, max: -18, defaut: -19 };
@@ -22,7 +21,7 @@ const MOIS_FR = ["janvier","février","mars","avril","mai","juin","juillet","ao�
 function echapper(s) {
   return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
-/** Ne garde que la forme attendue : dates, températures chiffrées, arrêts, visa (heure HH:MM + nom court).
+/** Ne garde que la forme attendue : dates, températures chiffrées, arrêts, et « relevé validé » (sans heure ni nom).
     Tout le reste est écarté, pour qu'une donnée trafiquée ne puisse jamais s'exécuter dans la page. */
 function assainir(brut) {
   const propre = {};
@@ -42,7 +41,7 @@ function assainir(brut) {
     const v = src._v && src._v[MOMENT];
     if (v && typeof v === "object") {
       jour._v = {};
-      jour._v[MOMENT] = { h: /^\d{2}:\d{2}$/.test(v.h) ? v.h : "--:--", par: String(v.par == null ? "" : v.par).slice(0, 40) };
+      jour._v[MOMENT] = { ok: true }; // l'heure et le nom des anciens relevés ne sont plus repris
     }
     if (Object.keys(jour).length) propre[date] = jour;
   });
@@ -51,7 +50,7 @@ function assainir(brut) {
 
 let donnees;
 try { donnees = assainir(JSON.parse(localStorage.getItem(CLE) || "{}")); } catch (e) { donnees = {}; }
-// { "2026-06-13": { f1:{Jour:3}, f5:{off:true}, _v:{ Jour:{h:"06:30",par:"Damien"} } } }
+// { "2026-06-13": { f1:{Jour:3}, f5:{off:true}, _v:{ Jour:{ok:true} } } }
 let modeRecap = false;
 const $ = id => document.getElementById(id);
 
@@ -103,8 +102,8 @@ function rendreSaisie() {
 function majBoutonValider() {
   const v = jourCourant()._v || {};
   const b = $("btnValider");
-  if (v[MOMENT]) { b.classList.add("valide"); b.textContent = "✓ Validé " + v[MOMENT].h + " — revalider ?"; }
-  else { b.classList.remove("valide"); b.textContent = "✓ " + VALIDATEUR + " valide le relevé"; }
+  if (v[MOMENT]) { b.classList.add("valide"); b.textContent = "✓ Relevé validé — revalider ?"; }
+  else { b.classList.remove("valide"); b.textContent = "✓ Valider le relevé"; }
 }
 
 function majStatut() {
@@ -112,7 +111,7 @@ function majStatut() {
   const s = $("statutValide");
   if (v[MOMENT]) {
     s.style.display = "block";
-    s.textContent = "✓ Relevé validé à " + v[MOMENT].h + " par " + v[MOMENT].par;
+    s.textContent = "✓ Relevé validé";
   } else s.style.display = "none";
 }
 
@@ -180,14 +179,13 @@ function valider() {
   });
   if (n === 0) { toast("Saisissez d'abord les températures (ou mettez les frigos éteints sur Off)"); return; }
   const manquants = FRIGOS.filter(f => !(jour[f.id] && (jour[f.id].off || jour[f.id][MOMENT] !== undefined)));
-  const d = new Date();
   jour._v = jour._v || {};
-  jour._v[MOMENT] = { h: String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0"), par: VALIDATEUR };
+  jour._v[MOMENT] = { ok: true };
   localStorage.setItem(CLE, JSON.stringify(donnees));
   pushServeur({ [date]: donnees[date] });
   majStatut();
   majBoutonValider();
-  toast("✓ Relevé validé par " + VALIDATEUR +
+  toast("✓ Relevé validé" +
     (manquants.length ? " — attention, sans : " + manquants.map(f => f.nom).join(", ") : ""));
 }
 
@@ -272,7 +270,7 @@ function rendreControle(mois) {
     });
     let cell;
     if (futur) cell = `<td class="futur">·</td>`;
-    else if (v[MOMENT]) cell = `<td class="ok">✓ ${echapper(v[MOMENT].h)} ${echapper(v[MOMENT].par)}</td>`;
+    else if (v[MOMENT]) cell = `<td class="ok">✓ fait</td>`;
     else { manques++; cell = `<td class="manque">✗ manquant</td>`; }
     lignes.push(`<tr class="${alertes ? "alerte-jour" : ""}">
       <td>${String(j).padStart(2,"0")}/${String(m).padStart(2,"0")}${alertes ? " ⚠️" : ""}</td>${cell}
@@ -282,7 +280,7 @@ function rendreControle(mois) {
     <div class="recap-stats controle">
       <h2>👔 Contrôle manager — relevés du mois</h2>
       <table>
-        <tr><th>Jour</th><th>Relevé (${VALIDATEUR})</th></tr>
+        <tr><th>Jour</th><th>Relevé</th></tr>
         ${lignes.join("")}
       </table>
       <div class="legende">
@@ -317,7 +315,7 @@ function genererPdfMois() {
   doc.setTextColor(120, 120, 120);
   doc.text("Frigos 1 à 7 : froid positif 0 à +4 °C.   |   Congel 1, Congel 2 et Chambre froide négative : -30 à -18 °C.", 14, 27);
 
-  const head = [["Date", ...FRIGOS.map(f => f.num <= 7 ? "F" + f.num : f.nom), "Visa (" + VALIDATEUR + ")"]];
+  const head = [["Date", ...FRIGOS.map(f => f.num <= 7 ? "F" + f.num : f.nom), "Relevé"]];
   const body = jours.map(date => {
     const v = donnees[date]._v || {};
     return [dateFr(date).replace(" " + mois.slice(0,4), ""),
@@ -326,7 +324,7 @@ function genererPdfMois() {
         if (r && r.off) return "Éteint";
         return r && r[MOMENT] !== undefined ? fmtTemp(r[MOMENT]) : "—";
       }),
-      v[MOMENT] ? v[MOMENT].par + " " + v[MOMENT].h : "—"];
+      v[MOMENT] ? "validé" : "—"];
   });
 
   doc.autoTable({
