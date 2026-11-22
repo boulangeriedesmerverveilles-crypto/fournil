@@ -23,12 +23,16 @@ function echapper(s) {
 }
 /** Ne garde que la forme attendue : dates, températures chiffrées, arrêts, et « relevé validé » (sans heure ni nom).
     Tout le reste est écarté, pour qu'une donnée trafiquée ne puisse jamais s'exécuter dans la page. */
+// Jours retirés du registre à la demande d'Isabelle (essais, pas de vrais relevés).
+// Ils sont écartés ici pour qu'aucun téléphone qui en garde une copie ne les renvoie au serveur.
+const JOURS_RETIRES = ["2026-06-13"];
 function assainir(brut) {
   const propre = {};
   if (!brut || typeof brut !== "object" || Array.isArray(brut)) return propre;
   Object.keys(brut).forEach(date => {
     const src = brut[date];
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !src || typeof src !== "object") return;
+    if (JOURS_RETIRES.includes(date)) return;
     const jour = {};
     FRIGOS.forEach(f => {
       const r = src[f.id];
