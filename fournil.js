@@ -19,6 +19,7 @@ const FRIGOS = [
 const ACTIONS = [
   { code: "rev",   texte: "Revérifier le frigo 1 heure plus tard" },
   { code: "resp",  texte: "Informer le responsable" },
+  { code: "frigo", texte: "Demande d'intervention frigoriste (Marco Frigo)" },
   { code: "porte", texte: "Porte bien refermée" },
   { code: "depl",  texte: "Produits déplacés dans un autre frigo" },
   { code: "jet",   texte: "Produits jetés" },
