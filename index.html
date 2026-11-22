@@ -22,8 +22,29 @@
   }
   .modules button.actif[data-module="livraisons"] { background: #8DB600; color: #1A0F08; }
   .modules button.actif[data-module="fournil"] { background: var(--acc); color: white; }
-  body[data-module="fournil"] .m-livr,
-  body[data-module="livraisons"] .m-fournil { display: none !important; }
+  .modules button.actif[data-module="boutique"] { background: #3b7a9a; color: white; }
+  body[data-module="fournil"] .m-livr, body[data-module="fournil"] .m-bout,
+  body[data-module="livraisons"] .m-fournil, body[data-module="livraisons"] .m-bout,
+  body[data-module="boutique"] .m-fournil, body[data-module="boutique"] .m-livr { display: none !important; }
+  [hidden] { display: none !important; }
+
+  /* Onglet Boutique : mêmes composants que le fournil, en bleu (la couleur de l'ancienne appli des vendeuses). */
+  #modBout, .save-bar.m-bout, header.h-bout { --acc: #3b7a9a; --acc-fonce: #26586e; }
+  .b-onglets { display: flex; gap: 8px; margin-bottom: 12px; }
+  .b-onglets button {
+    flex: 1; padding: 11px 6px; border: 2px solid var(--acc); border-radius: 14px;
+    background: white; color: var(--acc-fonce); font-weight: bold; font-size: 1rem; line-height: 1.3;
+  }
+  .b-onglets button span { display: block; font-size: .78rem; font-weight: normal; opacity: .85; }
+  .b-onglets button.actif { background: var(--acc); color: white; }
+  .b-onglets button.fait { border-color: var(--vert); }
+  .b-onglets button.fait:not(.actif) { color: var(--vert); }
+  .b-onglets button.actif.fait { background: var(--vert); }
+  .b-valider { flex: 1; background: var(--acc); color: white; }
+  .b-valider.valide { background: var(--vert); }
+  .b-valider:disabled { background: #b9b0a0; }
+  .b-recap { flex: 0 0 64px; background: var(--brun); color: white; font-size: 1.3rem; }
+  .b-recap.large { flex: 1; }
 </style>
 </head>
 <body data-module="fournil">
@@ -32,24 +53,33 @@
   (function () {
     var m = null;
     try {
-      var h = location.hash.replace("#", "");
-      if (h === "livraisons" || h === "fournil" || h === "temperatures") m = h === "temperatures" ? "fournil" : h;
-      if (!m) m = localStorage.getItem("bdm_module");
-      // Appareil qui connaît déjà les températures (Maël) : il reste dessus. Nouvel appareil : livraisons.
-      if (!m) m = localStorage.getItem("bdm_fournil_v1") ? "fournil" : "livraisons";
+      var connus = { livraisons: "livraisons", fournil: "fournil", temperatures: "fournil", boutique: "boutique" };
+      m = connus[location.hash.replace("#", "")] || null;       // 1. l'adresse le dit (ex. …/#boutique)
+      if (!m) m = connus[localStorage.getItem("bdm_module")];    // 2. le dernier onglet utilisé sur cet appareil
+      if (!m) {
+        // 3. première visite : on devine d'après ce que l'appareil connaît déjà, et on le retient
+        //    (sinon le chargement en arrière-plan des températures ferait changer d'onglet à la visite suivante).
+        m = localStorage.getItem("bdm_fournil_v1") ? "fournil" : localStorage.getItem("bdm_frigos_v1") ? "boutique" : "livraisons";
+        localStorage.setItem("bdm_module", m);
+      }
     } catch (e) {}
-    document.body.dataset.module = m === "livraisons" ? "livraisons" : "fournil";
+    document.body.dataset.module = m || "fournil";
   })();
 </script>
 
 <div id="haut">
   <nav class="modules" aria-label="Choix du module">
     <button type="button" data-module="livraisons">🥖 Livraisons</button>
-    <button type="button" data-module="fournil">🌡️ Températures</button>
+    <button type="button" data-module="fournil">🌡️ Fournil</button>
+    <button type="button" data-module="boutique">🏪 Boutique</button>
   </nav>
   <header class="m-fournil">
     <h1>🌡️ Températures fournil</h1>
     <div class="sous">Boulangerie des Merveilles — Fournil — Suivi HACCP <span id="etatSync" title="Synchronisation">⚪</span></div>
+  </header>
+  <header class="m-bout h-bout">
+    <h1>🌡️ Températures boutique</h1>
+    <div class="sous">Boulangerie des Merveilles — Boutique — Suivi HACCP <span id="b_sync" title="Synchronisation">⚪</span></div>
   </header>
   <header class="m-livr h-livr">
     <h1>🥖 Livraisons de pain</h1>
@@ -88,6 +118,43 @@
 <div class="save-bar m-fournil">
   <button id="btnValider">✓ Valider</button>
   <button id="btnRecap" aria-label="Récap du mois">📊</button>
+</div>
+
+<!-- ===================== Module Températures boutique ===================== -->
+<main class="m-bout" id="modBout">
+  <section id="b_vueSaisie">
+    <div class="date-bar">
+      <button id="b_prec" aria-label="Jour précédent">‹</button>
+      <input type="date" id="b_date" aria-label="Date du relevé">
+      <button id="b_suiv" aria-label="Jour suivant">›</button>
+    </div>
+    <div class="b-onglets" id="b_onglets">
+      <button type="button" data-moment="Matin">🌅 Matin<span>à faire</span></button>
+      <button type="button" data-moment="Soir">🌙 Soir<span>à faire</span></button>
+    </div>
+    <div id="b_ferme" hidden></div>
+    <div class="statut-valide" id="b_statut"></div>
+    <div class="bandeau-alerte" id="b_alerte"></div>
+    <div id="b_liste"></div>
+    <div class="zone-action" id="b_zoneAction" hidden>
+      <div class="titre-action">Action corrective <span>— température hors plage</span></div>
+      <div class="cases-action" id="b_cases"></div>
+      <label for="b_action" class="sous-titre-action">Précisions (facultatif)</label>
+      <textarea id="b_action" rows="2" maxlength="300" placeholder="Ex. : recontrôle à 9 h : +3 °C."></textarea>
+    </div>
+  </section>
+
+  <section id="b_vueRecap" hidden>
+    <div class="mois-bar"><select id="b_selMois" aria-label="Mois"></select></div>
+    <button class="btn-pdf-mois" id="b_pdf">📄 PDF du mois (registre HACCP)</button>
+    <button class="btn-pdf-mois c-btn-gestion" data-cal="gestion">📅 Fermetures et congés</button>
+    <div id="b_recap"></div>
+  </section>
+</main>
+
+<div class="save-bar m-bout">
+  <button type="button" id="b_valider" class="b-valider">✓ Valider</button>
+  <button type="button" id="b_recapBtn" class="b-recap" aria-label="Récap du mois">📊</button>
 </div>
 
 <!-- ===================== Module Livraisons de pain ===================== -->
@@ -148,15 +215,17 @@
 <script src="calendrier.js?v=7"></script>
 <script src="fournil.js?v=10"></script>
 <script src="livraisons.js?v=7"></script>
+<script src="boutique.js?v=1"></script>
 <script>
   /* Passage d'un module à l'autre. Le choix est mémorisé sur l'appareil. */
-  const COULEUR_MODULE = { fournil: "#9a5a3b", livraisons: "#8DB600" };
+  const COULEUR_MODULE = { fournil: "#9a5a3b", livraisons: "#8DB600", boutique: "#3b7a9a" };
 
   function montrerModule(m) {
     document.body.dataset.module = m;
     document.querySelectorAll(".modules button").forEach((b) => b.classList.toggle("actif", b.dataset.module === m));
     document.getElementById("metaTheme").content = COULEUR_MODULE[m];
     if (m === "livraisons") Livr.afficher();
+    if (m === "boutique") Boutique.afficher();
   }
 
   document.querySelector(".modules").addEventListener("click", (ev) => {
