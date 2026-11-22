@@ -71,8 +71,23 @@ function conforme(f, v) { return v >= f.min && v <= f.max; }
 function jourCourant() { return donnees[$("dateJour").value] || {}; }
 
 /* ---------- SAISIE ---------- */
+/** Vrai si le jour affiché est fermé ET ne contient encore aucune saisie. */
+function jourFerme() {
+  return Calendrier.bandeau($("dateJour").value, Object.keys(jourCourant()).length > 0, "relevé").ferme;
+}
+
 function rendreSaisie() {
   const jour = jourCourant();
+  const fermeture = Calendrier.bandeau($("dateJour").value, Object.keys(jour).length > 0, "relevé");
+  $("bandeauFerme").innerHTML = fermeture.html; // HTML fabriqué et échappé par calendrier.js
+  $("bandeauFerme").hidden = !fermeture.html;
+  if (fermeture.ferme) {
+    $("listeFrigos").innerHTML = "";
+    $("bandeauAlerte").style.display = "none";
+    majStatut();
+    majBoutonValider();
+    return;
+  }
   $("listeFrigos").innerHTML = FRIGOS.map(f => {
     const off = !!(jour[f.id] && jour[f.id].off);
     const v = !off && jour[f.id] && jour[f.id][MOMENT] !== undefined ? jour[f.id][MOMENT] : "";
@@ -106,6 +121,8 @@ function rendreSaisie() {
 function majBoutonValider() {
   const v = jourCourant()._v || {};
   const b = $("btnValider");
+  b.disabled = jourFerme();
+  if (b.disabled) { b.classList.remove("valide"); b.textContent = "🔒 Jour de fermeture"; return; }
   if (v[MOMENT]) { b.classList.add("valide"); b.textContent = "✓ Relevé validé — revalider ?"; }
   else { b.classList.remove("valide"); b.textContent = "✓ Valider le relevé"; }
 }
@@ -165,7 +182,7 @@ function basculerOff(fid) {
 
 function valider() {
   const date = $("dateJour").value;
-  if (!date) return;
+  if (!date || jourFerme()) return;
   donnees[date] = donnees[date] || {};
   const jour = donnees[date];
   let n = 0;
@@ -234,7 +251,8 @@ function rendreRecap() {
   const mois = $("selMois").value;
   const { jours, stats } = statsMois(mois);
   if (jours.length === 0) {
-    $("listeRecap").innerHTML = `<div class="vide">Aucun relevé enregistré ce mois-ci.</div>`;
+    // Même sans aucun relevé, on montre le contrôle : c'est là qu'on voit les jours manquants.
+    $("listeRecap").innerHTML = `<div class="vide">Aucun relevé enregistré ce mois-ci.</div>${rendreControle(mois)}`;
     return;
   }
   $("listeRecap").innerHTML = `
@@ -273,8 +291,9 @@ function rendreControle(mois) {
       if (!conforme(f, r[MOMENT])) alertes++;
     });
     let cell;
-    if (futur) cell = `<td class="futur">·</td>`;
-    else if (v[MOMENT]) cell = `<td class="ok">✓ fait</td>`;
+    if (v[MOMENT]) cell = `<td class="ok">✓ fait</td>`;
+    else if (Calendrier.etat(date).ferme) cell = `<td class="futur">fermé</td>`;
+    else if (futur) cell = `<td class="futur">·</td>`;
     else { manques++; cell = `<td class="manque">✗ manquant</td>`; }
     lignes.push(`<tr class="${alertes ? "alerte-jour" : ""}">
       <td>${String(j).padStart(2,"0")}/${String(m).padStart(2,"0")}${alertes ? " ⚠️" : ""}</td>${cell}
@@ -291,7 +310,7 @@ function rendreControle(mois) {
         ${manques === 0
           ? "✓ Tous les relevés sont faits jusqu'à aujourd'hui."
           : "✗ " + manques + " relevé(s) manquant(s) ce mois-ci."}
-        — ⚠️ = température hors plage ce jour-là (détail en rouge dans le PDF).
+        — « fermé » = mercredi, jeudi ou congés. ⚠️ = température hors plage ce jour-là (détail en rouge dans le PDF).
       </div>
     </div>`;
 }
@@ -374,6 +393,7 @@ function majSync(ok) {
 
 function appliquerServeur(srv) {
   if (!srv || Array.isArray(srv) || typeof srv !== "object") srv = {};
+  Calendrier.recevoir(srv[Calendrier.CLE_SERVEUR]); // fermetures et congés, rangés à part du registre
   srv = assainir(srv);
   let aPousser = false;
   Object.keys(donnees).forEach(d => { if (!srv[d]) { srv[d] = donnees[d]; aPousser = true; } });
@@ -402,7 +422,7 @@ async function pullServeur() {
 }
 
 async function pushServeur(payload) {
-  payload = payload || donnees;
+  if (!payload) { payload = Object.assign({}, donnees); payload[Calendrier.CLE_SERVEUR] = Calendrier.pourServeur(); }
   try {
     const r = await fetch(urlSync(payload));
     if (!r.ok) throw new Error(r.status);
@@ -441,6 +461,7 @@ $("btnValider").addEventListener("click", valider);
 $("btnRecap").addEventListener("click", basculer);
 $("selMois").addEventListener("change", rendreRecap);
 $("btnPdfMois").addEventListener("click", genererPdfMois);
+Calendrier.surChangement(() => { if (modeRecap) rendreRecap(); else rendreSaisie(); });
 rendreSaisie();
 pullServeur();
 document.addEventListener("visibilitychange", () => { if (!document.hidden) pullServeur(); });

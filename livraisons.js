@@ -262,6 +262,18 @@ const Livr = (() => {
   function rendreSaisie() {
     const d = dateVue();
     const j = jours[d] || {};
+    // Jour de fermeture (mercredi, jeudi, congés) sans aucune saisie : bandeau gris à la place des cartes.
+    const fermeture = Calendrier.bandeau(d, Object.keys(j).length > 0, "livraison");
+    $("l_ferme").innerHTML = fermeture.html; // HTML fabriqué et échappé par calendrier.js
+    $("l_ferme").hidden = !fermeture.html;
+    if (fermeture.ferme) {
+      vue = [];
+      $("l_cartes").innerHTML = "";
+      $("l_auj").classList.toggle("actif", d === iso(new Date()));
+      $("l_date_txt").textContent = dateLongue(d);
+      renduDu = false;
+      return;
+    }
     vue = cfg.ests.map((e) => {
       const je = j[e.nom] || {};
       // Un produit livré ce jour-là reste visible même s'il a été décoché depuis.
@@ -651,7 +663,8 @@ const Livr = (() => {
          <button class="l-mini" data-act="validerNom" aria-label="Valider">✓</button>
          <button class="l-mini" data-act="annulerNom" aria-label="Annuler">✕</button>`
       : boutons;
-    const onglets = `<div class="l-onglets">
+    const onglets = `<button type="button" class="l-btn l-btn-2 l-large" data-cal="gestion">📅 Fermetures et congés</button>
+      <div class="l-onglets">
         <button data-act="onglet" data-onglet="ests" class="${feuille.onglet === "ests" ? "actif" : ""}">Clients</button>
         <button data-act="onglet" data-onglet="prods" class="${feuille.onglet === "prods" ? "actif" : ""}">Produits</button>
       </div>`;
@@ -933,6 +946,7 @@ const Livr = (() => {
     f.addEventListener("keydown", surToucheFeuille);
     f.addEventListener("toggle", surBasculeDetails, true);
 
+    Calendrier.surChangement(rendreSaisie); // fermetures et congés modifiés : on réaffiche le jour
     rendreSaisie();
     majEtat(enLigne() ? "charge" : "horsligne");
     synchroniser(true);

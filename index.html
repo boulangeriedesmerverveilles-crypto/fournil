@@ -9,8 +9,8 @@
 <meta name="theme-color" content="#9a5a3b" id="metaTheme">
 <title>Boulangerie des Merveilles — Livraisons et températures</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>🥖</text></svg>">
-<link rel="stylesheet" href="fournil.css?v=3">
-<link rel="stylesheet" href="livraisons.css?v=3">
+<link rel="stylesheet" href="fournil.css?v=7">
+<link rel="stylesheet" href="livraisons.css?v=7">
 <style>
   /* Coquille commune : bandeau collant + choix du module.
      Un seul module est visible à la fois, selon body[data-module]. */
@@ -65,6 +65,7 @@
       <input type="date" id="dateJour">
       <button id="jourSuiv" aria-label="Jour suivant">›</button>
     </div>
+    <div id="bandeauFerme" hidden></div>
     <div class="statut-valide" id="statutValide"></div>
     <div class="bandeau-alerte" id="bandeauAlerte"></div>
     <div id="listeFrigos"></div>
@@ -73,6 +74,7 @@
   <section id="vueRecap">
     <div class="mois-bar"><select id="selMois"></select></div>
     <button class="btn-pdf-mois" id="btnPdfMois">📄 PDF du mois (registre HACCP)</button>
+    <button class="btn-pdf-mois c-btn-gestion" data-cal="gestion">📅 Fermetures et congés</button>
     <div id="listeRecap"></div>
   </section>
 </main>
@@ -96,6 +98,7 @@
     <button type="button" data-act="recap">📅 Récap du mois</button>
     <button type="button" data-act="reglages">⚙️ Réglages</button>
   </div>
+  <div id="l_ferme" hidden></div>
   <div id="l_cartes"></div>
 </main>
 
@@ -123,12 +126,22 @@
   </div>
 </div>
 
+<!-- Fermetures et congés (commun aux deux onglets) -->
+<div class="l-feuille c-feuille" id="c_feuille" hidden>
+  <div class="l-feuille-tete">
+    <button type="button" data-cal="fermer" aria-label="Fermer">✕</button>
+    <h2>Fermetures et congés</h2>
+  </div>
+  <div class="l-feuille-corps" id="c_corps"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="vendor/jspdf.plugin.autotable.min.js"></script>
-<script src="fournil.js?v=6"></script>
-<script src="livraisons.js?v=4"></script>
+<script src="calendrier.js?v=7"></script>
+<script src="fournil.js?v=7"></script>
+<script src="livraisons.js?v=7"></script>
 <script>
   /* Passage d'un module à l'autre. Le choix est mémorisé sur l'appareil. */
   const COULEUR_MODULE = { fournil: "#9a5a3b", livraisons: "#8DB600" };
