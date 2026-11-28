@@ -6,8 +6,10 @@
    Les deux applis lisent et écrivent les mêmes lignes ; les clients et
    produits y sont identifiés par leur NOM.
 
-   Les listes (clients, produits cochés, tarifs) sont propres à chaque
-   appareil, comme dans l'appli Lovable.
+   Les listes (clients, produits cochés, tarifs) sont partagées entre les
+   appareils : elles sont rangées sur le serveur des températures, dans un
+   enregistrement réservé (voir CLE_PART), comme le calendrier des fermetures.
+   Chaque appareil en garde une copie pour fonctionner hors ligne.
 
    Dépend de fournil.js pour $() et toast(), et de jsPDF + autoTable.
    ============================================================ */
@@ -20,7 +22,9 @@ const Livr = (() => {
     cle: "sb_publishable_MRUp9jNeIpL4vKe6x7zM1w_hTBc5Uue",
   };
   const CHAMPS = "select=delivery_date,establishment,product,qty";
-  const CLE_CFG = "bdm_livr_cfg_v1";   // clients, produits, tarifs (par appareil)
+  const CLE_CFG = "bdm_livr_cfg_v1";   // clients, produits, tarifs (copie locale des listes partagées)
+  const CLE_TAMP = "bdm_livr_cfg_t_v1"; // date du dernier changement connu de chaque liste
+  const CLE_PART = "9999-12-30";       // enregistrement réservé aux listes sur le serveur des températures
   const CLE_DATA = "bdm_livr_data_v1"; // copie locale des livraisons
   const CLE_FILE = "bdm_livr_file_v1"; // saisies pas encore envoyées
 
@@ -86,7 +90,160 @@ const Livr = (() => {
   let vue = [];                      // cartes affichées : [{ est, prods: [...] }]
   let renduDu = false;               // un rafraîchissement attend la fin de la saisie en cours
   let feuille = null;                // feuille plein écran ouverte
-  const sauverCfg = () => ecrire(CLE_CFG, cfg);
+  const sauverCfg = () => { ecrire(CLE_CFG, cfg); marquer(); };
+
+  /* ---------- Listes partagées entre les appareils ----------
+     Les listes sont découpées en petits morceaux, chacun daté :
+       "p"       produits (ordre) et produits supprimés ;
+       "o"       ordre des clients ;
+       "e:<nom>" un client : produits cochés, tarifs, ou x = 1 s'il est supprimé.
+     Pour chaque morceau, la version la plus récente l'emporte. Au tout premier
+     contact d'un appareil avec le serveur, rien n'est écrasé : les deux listes
+     sont réunies. */
+  let tampons = lire(CLE_TAMP) || {};  // { morceau: { t: date, s: contenu connu } }, _init = premier contact fait
+  let partEnCours = false;
+  let partMinuterie = null;
+  const objet = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+  const textes = (l) => (Array.isArray(l) ? l.filter((x) => typeof x === "string" && x.trim()) : []);
+  const unir = (a, b) => a.concat(b.filter((x) => !a.includes(x)));
+  function prixPropres(src) {
+    const net = {};
+    if (objet(src)) Object.keys(src).sort().forEach((k) => { const v = +src[k]; if (v > 0) net[k] = Math.round(v * 100) / 100; });
+    return net;
+  }
+
+  /** Les listes de cet appareil, morceau par morceau. */
+  function morceaux() {
+    const m = {};
+    m.p = { l: cfg.prods.slice(), c: cfg.cachesProds.slice() };
+    m.o = { l: cfg.ests.map((e) => e.nom) };
+    cfg.ests.forEach((e) => { m["e:" + e.nom] = { x: 0, prods: e.prods.slice(), prix: prixPropres(e.prix), retires: e.retires.slice() }; });
+    cfg.cachesEsts.forEach((n) => { if (!m["e:" + n]) m["e:" + n] = { x: 1 }; });
+    // Un client connu qui n'existe plus ici (renommé, par exemple) est signalé comme supprimé.
+    Object.keys(tampons).forEach((k) => { if (k.indexOf("e:") === 0 && !m[k]) m[k] = { x: 1 }; });
+    return m;
+  }
+
+  /** Date les morceaux modifiés sur cet appareil, puis prévoit leur envoi. */
+  function marquer() {
+    if (!tampons._init) return; // avant le premier contact, rien n'est daté : le serveur ne doit pas être écrasé
+    const m = morceaux();
+    let change = false;
+    Object.keys(m).forEach((k) => {
+      const s = JSON.stringify(m[k]);
+      if (!tampons[k] || tampons[k].s !== s) { tampons[k] = { t: Date.now(), s: s }; change = true; }
+    });
+    if (!change) return;
+    ecrire(CLE_TAMP, tampons);
+    clearTimeout(partMinuterie);
+    partMinuterie = setTimeout(partager, 900);
+  }
+
+  /** Applique un morceau venu du serveur aux listes de cet appareil. */
+  function appliquer(k, v) {
+    if (k === "p") {
+      cfg.prods = textes(v.l);
+      cfg.cachesProds = textes(v.c).filter((p) => !cfg.prods.includes(p));
+    } else if (k === "o") {
+      const ordre = textes(v.l);
+      const rang = (e) => { const i = ordre.indexOf(e.nom); return i < 0 ? 9999 : i; };
+      cfg.ests = cfg.ests.map((e, i) => ({ e: e, i: i })).sort((a, b) => rang(a.e) - rang(b.e) || a.i - b.i).map((x) => x.e);
+    } else if (k.indexOf("e:") === 0) {
+      const nom = k.slice(2);
+      if (!nom) return;
+      if (v.x === 1) {
+        cfg.ests = cfg.ests.filter((e) => e.nom !== nom);
+        if (!cfg.cachesEsts.includes(nom)) cfg.cachesEsts.push(nom);
+        return;
+      }
+      let e = cfg.ests.find((x) => x.nom === nom);
+      if (!e) { e = { nom: nom, prods: [], prix: {}, retires: [] }; cfg.ests.push(e); }
+      e.prods = textes(v.prods);
+      e.prix = prixPropres(v.prix);
+      e.retires = textes(v.retires);
+      retirer(cfg.cachesEsts, nom);
+    }
+  }
+
+  /** Premier contact : on réunit les listes du serveur et celles de l'appareil, sans rien perdre. */
+  function reunir(srv) {
+    const p = objet(srv.p) ? srv.p : {};
+    cfg.prods = unir(cfg.prods, textes(p.l));
+    cfg.cachesProds = unir(cfg.cachesProds, textes(p.c)).filter((x) => !cfg.prods.includes(x));
+    Object.keys(srv).forEach((k) => {
+      const v = srv[k];
+      if (k.indexOf("e:") !== 0 || !objet(v) || !k.slice(2)) return;
+      const nom = k.slice(2);
+      let e = cfg.ests.find((x) => x.nom === nom);
+      if (v.x === 1) { if (!e && !cfg.cachesEsts.includes(nom)) cfg.cachesEsts.push(nom); return; } // présent ici : il reste
+      if (!e) { e = { nom: nom, prods: [], prix: {}, retires: [] }; cfg.ests.push(e); }
+      e.prods = unir(e.prods, textes(v.prods));
+      e.prix = Object.assign(prixPropres(e.prix), prixPropres(v.prix));
+      e.retires = unir(e.retires, textes(v.retires)).filter((x) => !e.prods.includes(x));
+      retirer(cfg.cachesEsts, nom);
+    });
+    const ordre = objet(srv.o) ? textes(srv.o.l) : [];
+    if (ordre.length) appliquer("o", { l: unir(ordre, cfg.ests.map((e) => e.nom)) });
+  }
+
+  async function envoyerMorceaux(lot) {
+    for (const k of Object.keys(lot)) {
+      const contenu = {}, envoi = {};
+      contenu[k] = lot[k];
+      envoi[CLE_PART] = contenu;
+      const r = await fetch(urlSync(envoi)); // un morceau par appel : l'adresse reste courte
+      if (!r.ok) throw new Error("HTTP " + r.status);
+    }
+  }
+
+  /** Met les listes d'accord avec le serveur. Renvoie true si les listes de cet appareil ont changé. */
+  async function partager() {
+    clearTimeout(partMinuterie);
+    if (partEnCours || !enLigne() || typeof urlSync !== "function") return false;
+    partEnCours = true;
+    let change = false;
+    try {
+      const r = await fetch(urlSync());
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const tout = await r.json();
+      const srv = objet(tout) && objet(tout[CLE_PART]) ? tout[CLE_PART] : {};
+      const avant = JSON.stringify(cfg);
+      const reglagesOuverts = !!feuille && feuille.type === "reglages"; // on ne bouscule pas une liste en cours de modification
+      const dateSrv = (k) => (objet(srv[k]) && typeof srv[k].t === "number" ? srv[k].t : 0);
+      if (!tampons._init) {
+        reunir(srv);
+        tampons = { _init: 1 };
+        const m = morceaux(), t = Date.now();
+        Object.keys(m).forEach((k) => { tampons[k] = { t: t, s: JSON.stringify(m[k]) }; });
+      } else if (!reglagesOuverts) {
+        const recus = Object.keys(srv).filter((k) => objet(srv[k]) && dateSrv(k) > ((tampons[k] || {}).t || 0));
+        // Les clients d'abord, puis les produits, puis l'ordre.
+        const poids = (k) => (k === "o" ? 2 : k === "p" ? 1 : 0);
+        recus.sort((a, b) => poids(a) - poids(b)).forEach((k) => appliquer(k, srv[k]));
+        const m = morceaux();
+        recus.forEach((k) => { tampons[k] = { t: dateSrv(k), s: JSON.stringify(m[k] || { x: 1 }) }; });
+        // Ce qui a bougé par ricochet (l'ordre, par exemple) est daté comme un changement d'ici.
+        Object.keys(m).forEach((k) => {
+          const s = JSON.stringify(m[k]);
+          if (!tampons[k] || tampons[k].s !== s) tampons[k] = { t: Date.now(), s: s };
+        });
+      }
+      change = avant !== JSON.stringify(cfg);
+      if (change) ecrire(CLE_CFG, cfg);
+      ecrire(CLE_TAMP, tampons);
+      // Envoi de ce qui est plus récent ici que sur le serveur.
+      const m = morceaux(), lot = {};
+      Object.keys(m).forEach((k) => {
+        const t = (tampons[k] || {}).t || 0;
+        if (t > dateSrv(k)) lot[k] = Object.assign({ t: t }, m[k]);
+      });
+      await envoyerMorceaux(lot);
+    } catch (e) {
+      console.error("livraisons : listes partagées", e);
+    }
+    partEnCours = false;
+    return change;
+  }
 
   const dateVue = () => {
     const champ = $("l_date");
@@ -230,8 +387,9 @@ const Livr = (() => {
       const empreinte = () => JSON.stringify(jours[dateVue()] || {}) + JSON.stringify(cfg);
       const avant = empreinte();
       const applique = await tirer(complet ? null : dateVue());
+      const listes = await partager(); // clients, produits et tarifs communs à tous les appareils
       if (!Object.keys(file).length) majEtat("ok");
-      if (!applique) return;
+      if (!applique && !listes) return;
       if (avant !== empreinte()) { if (saisieEnCours()) renduDu = true; else rendreSaisie(); }
       // Feuille ouverte : on la met à jour sans déranger une saisie (recherche, réglages).
       if (feuille && feuille.type === "historique") $("l_h_liste").innerHTML = listeHistorique();
@@ -791,8 +949,8 @@ const Livr = (() => {
 
   async function supprimer(type, nom) {
     const message = type === "est"
-      ? "Supprimer le client « " + nom + " » de cet appareil ? Ses livraisons restent enregistrées et reviennent si vous le recréez avec le même nom."
-      : "Supprimer le produit « " + nom + " » de cet appareil ? Il sera retiré de tous les clients ; les livraisons déjà enregistrées sont conservées.";
+      ? "Supprimer le client « " + nom + " » sur tous les appareils ? Ses livraisons restent enregistrées et reviennent si vous le recréez avec le même nom."
+      : "Supprimer le produit « " + nom + " » sur tous les appareils ? Il sera retiré de tous les clients ; les livraisons déjà enregistrées sont conservées.";
     if (!(await demander(message, "Supprimer", true))) return;
     if (type === "est") {
       cfg.ests = cfg.ests.filter((e) => e.nom !== nom);
