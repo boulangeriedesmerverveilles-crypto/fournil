@@ -53,6 +53,9 @@ const Livr = (() => {
     cachesProds: [],
   };
 
+  /* Ajouts du 28/11/2026 : la levure livrée au CHU (suivie auparavant dans l'ancien carnet « CHU-TRACKER »). */
+  const AJOUTS = [{ prod: "Levure 500 g", est: "CHU" }];
+
   /* ---------- Petits outils ---------- */
   const lire = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } };
   const ecrire = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { console.error("livraisons : stockage", e); } };
@@ -78,6 +81,16 @@ const Livr = (() => {
     c.cachesEsts = c.cachesEsts || [];
     c.cachesProds = c.cachesProds || [];
     c.ests.forEach((e) => { e.prods = e.prods || []; e.prix = e.prix || {}; e.retires = e.retires || []; });
+    // Produits apportés par une mise à jour : posés une seule fois sur chaque appareil, puis libres d'être retirés.
+    c.ajoutsFaits = c.ajoutsFaits || [];
+    AJOUTS.forEach((a) => {
+      if (c.ajoutsFaits.includes(a.prod)) return;
+      c.ajoutsFaits.push(a.prod);
+      if (c.cachesProds.includes(a.prod)) return;
+      if (!c.prods.includes(a.prod)) c.prods.push(a.prod);
+      const e = c.ests.find((x) => x.nom === a.est);
+      if (e && !e.prods.includes(a.prod) && !e.retires.includes(a.prod)) e.prods.push(a.prod);
+    });
     return c;
   }
   let cfg = normaliserCfg(lire(CLE_CFG));
